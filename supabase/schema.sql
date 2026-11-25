@@ -45,6 +45,10 @@ create table if not exists notes (
   updated_at timestamptz default now()
 );
 
+-- Cho phép app truy cập bảng qua API (cần khi project tắt "Grant API access to new tables automatically")
+grant usage on schema public to anon, authenticated;
+grant select, insert, update, delete on sections, docs, anns, notes to authenticated;
+
 -- Mỗi người chỉ thấy dữ liệu của mình
 alter table sections enable row level security;
 alter table docs enable row level security;

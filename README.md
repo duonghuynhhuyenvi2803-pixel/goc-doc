@@ -1,6 +1,6 @@
 # 📖 Góc Đọc
 
-Web app đọc PDF + ghi chú song song: highlight nhiều màu có ý nghĩa, bút vẽ tay, chụp vùng PDF dán sang note, sổ note nền chấm như sổ tay, xuất Word / PDF có highlight, chia tài liệu theo section. Đồng bộ laptop ↔ điện thoại qua Supabase.
+Web app đọc **PDF, Word (.docx), PowerPoint (.pptx)** + ghi chú song song: highlight nhiều màu có ý nghĩa, bút vẽ tay, chụp vùng PDF dán sang note, sổ note nền chấm như sổ tay, xuất Word / PDF có highlight, chia tài liệu theo section. Đồng bộ laptop ↔ điện thoại qua Supabase.
 
 ## Tính năng
 
@@ -12,7 +12,8 @@ Web app đọc PDF + ghi chú song song: highlight nhiều màu có ý nghĩa, b
 | Highlight | 5 màu có nhãn (Ý chính, Từ vựng, Câu hay, Cần hỏi lại, Dịch/đối chiếu) — **nhấn đúp vào nhãn trong danh sách 🗒 để đổi tên**; lọc theo màu; bấm vào highlight để đổi màu / gửi sang note / xoá |
 | Sổ note | Nền chấm, H1/H2, đậm/nghiêng/gạch chân, tô nền chữ, danh sách, checklist, trích dẫn, dán/kéo ảnh, chỉnh cỡ ảnh S/M/L; mỗi highlight gửi sang có **chip trang** — bấm là nhảy về đúng chỗ trong PDF; tự lưu |
 | Bố cục | ◫ Chia đôi / chỉ PDF / chỉ note; kéo thanh giữa để chỉnh tỉ lệ; điện thoại tự chia trên/dưới |
-| Xuất | ⤓ Note ra Word (.docx, kèm phụ lục highlight theo màu) · PDF có in highlight + nét vẽ |
+| Xuất | ⤓ Note ra Word (.docx, kèm phụ lục highlight theo màu) · PDF có in highlight + nét vẽ · với Word/PowerPoint: tải file gốc |
+| Word / PowerPoint | Mở .docx và .pptx ngay trong app, dùng chung highlight, bút, tẩy, chụp vùng, tìm kiếm, note như PDF. File .doc/.ppt đời cũ: mở bằng Office rồi *Save As* .docx/.pptx |
 
 ## Cài đặt (làm 1 lần, ~10 phút)
 
@@ -41,6 +42,7 @@ npm run dev
 
 ## Giới hạn
 - Supabase Free: tối đa **50MB/file PDF**, tổng 1GB lưu trữ.
+- Word/PowerPoint được dựng lại bằng trình duyệt nên có thể lệch nhẹ so với Office (font, hiệu ứng, biểu đồ phức tạp). Cần chính xác 100% thì xuất ra PDF từ Office rồi tải lên.
 - PDF dạng ảnh scan (không có lớp chữ) thì không bôi chọn chữ được — dùng ✂️ chụp vùng hoặc ✏️ bút.
 - Nhãn màu highlight lưu riêng trên từng thiết bị.
 

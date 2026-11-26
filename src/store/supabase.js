@@ -49,8 +49,9 @@ export function makeSupabaseStore(url, key) {
         await sb.storage.from('pdfs').remove([d.file_path]);
       },
       async uploadPdf(file) {
-        const path = `${uid}/${crypto.randomUUID()}.pdf`;
-        ok(await sb.storage.from('pdfs').upload(path, file, { contentType: 'application/pdf' }));
+        const ext = (file.name.split('.').pop() || 'pdf').toLowerCase();
+        const path = `${uid}/${crypto.randomUUID()}.${ext}`;
+        ok(await sb.storage.from('pdfs').upload(path, file, { contentType: file.type || 'application/octet-stream' }));
         return { file_path: path, size: file.size };
       },
       async getPdf(d) {

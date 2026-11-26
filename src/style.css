@@ -252,3 +252,19 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .note-page .just-added { animation: justAdded 1.6s ease; }
 @keyframes justAdded { 0% { box-shadow: 0 0 0 3px rgba(35, 131, 226, .45); } 100% { box-shadow: 0 0 0 3px rgba(35, 131, 226, 0); } }
+
+/* ---------- Word / PowerPoint ---------- */
+.html-stage { position: fixed; left: -30000px; top: 0; visibility: hidden; pointer-events: none; }
+.html-stage.snap { visibility: visible; }
+.html-page { background: #fff; overflow: hidden; }
+.html-scale { position: absolute; left: 0; top: 0; transform-origin: 0 0; z-index: 0; }
+.html-scale.docx-wrapper { padding: 0 !important; background: none !important; display: block !important; }
+.html-scale.docx-wrapper > section.docx { margin: 0 !important; box-shadow: none !important; }
+.html-page .hl-layer { z-index: 1; }
+.pdf-host[data-tool="highlight"] .html-page ::selection { background: rgba(255, 214, 0, .45); }
+.html-page ::selection { background: rgba(35, 131, 226, .28); }
+::highlight(gd-search) { background-color: rgba(255, 170, 0, .45); }
+.badge { display: inline-block; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 4px; color: #fff; vertical-align: 1px; margin-right: 4px; }
+.badge.pdf { background: #e03131; }
+.badge.docx { background: #1971c2; }
+.badge.pptx { background: #e8590c; }

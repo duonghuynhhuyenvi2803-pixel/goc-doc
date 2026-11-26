@@ -50,6 +50,11 @@ async function confirmBox(title, msg) {
     { label: 'Xoá', danger: true, value: () => true },
   ])) === true;
 }
+// Loại file: pdf / docx / pptx (suy ra từ đuôi file đã lưu)
+const KINDS = ['pdf', 'docx', 'pptx'];
+const kindOf = (d) => { const e = (d.file_path || '').split('.').pop().toLowerCase(); return KINDS.includes(e) ? e : 'pdf'; };
+const extOf = (name) => (name.split('.').pop() || '').toLowerCase();
+const KIND_LABEL = { pdf: 'PDF', docx: 'WORD', pptx: 'PPT' };
 const fmtDate = (s) => { try { return new Date(s).toLocaleDateString('vi-VN'); } catch { return ''; } };
 
 // ---------------- boot ----------------
@@ -85,7 +90,7 @@ function renderLogin() {
   const v = h(`<div class="login">
     <form class="login-card">
       <div class="logo big">📖 Góc Đọc</div>
-      <p class="muted">Đọc PDF, highlight và ghi chú — đồng bộ laptop & điện thoại.</p>
+      <p class="muted">Đọc PDF, Word, PowerPoint — highlight và ghi chú — đồng bộ laptop & điện thoại.</p>
       <input class="input" type="email" name="email" placeholder="Email" required autocomplete="email">
       <input class="input" type="password" name="pw" placeholder="Mật khẩu" required autocomplete="current-password">
       <button class="btn primary wide">Đăng nhập</button>
@@ -113,16 +118,16 @@ function renderLibrary() {
     <header class="topbar">
       <div class="logo">📖 Góc Đọc</div>
       <div class="search-box"><span>🔍</span><input class="lib-search" placeholder="Tìm tài liệu hoặc nội dung note…" value="${esc(S.query)}"></div>
-      <button class="btn primary up-btn">＋ Thêm PDF</button>
+      <button class="btn primary up-btn">＋ Thêm tài liệu</button>
       <button class="icon-btn acct" title="Tài khoản">👤</button>
-      <input type="file" accept="application/pdf" multiple hidden class="up-input">
+      <input type="file" accept=".pdf,.docx,.pptx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation" multiple hidden class="up-input">
     </header>
     <div class="lib-body">
       <nav class="sidebar"></nav>
       <main class="lib-main">
         <div class="lib-head"><h2 class="sec-title"></h2><div class="sec-actions"></div></div>
         <div class="grid"></div>
-        <div class="drop-hint">Thả file PDF vào đây</div>
+        <div class="drop-hint">Thả file PDF / Word / PowerPoint vào đây</div>
       </main>
     </div></div>`);
   app.appendChild(v);
@@ -143,7 +148,7 @@ function renderLibrary() {
   main.addEventListener('dragleave', (e) => { if (!main.contains(e.relatedTarget)) main.classList.remove('dragging'); });
   main.addEventListener('drop', (e) => {
     e.preventDefault(); main.classList.remove('dragging');
-    const files = [...e.dataTransfer.files].filter((f) => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'));
+    const files = [...e.dataTransfer.files];
     if (files.length) uploadFiles(files);
   });
 
@@ -257,7 +262,7 @@ function drawGrid() {
   const list = filteredDocs();
   grid.innerHTML = '';
   if (!list.length) {
-    grid.appendChild(h(`<div class="empty">${S.query ? 'Không tìm thấy tài liệu nào.' : 'Chưa có tài liệu. Bấm <b>＋ Thêm PDF</b> hoặc kéo thả file PDF vào đây.'}</div>`));
+    grid.appendChild(h(`<div class="empty">${S.query ? 'Không tìm thấy tài liệu nào.' : 'Chưa có tài liệu. Bấm <b>＋ Thêm tài liệu</b> hoặc kéo thả file PDF, Word (.docx), PowerPoint (.pptx) vào đây.'}</div>`));
     return;
   }
   const q = norm(S.query.trim()).out;
@@ -275,7 +280,7 @@ function drawGrid() {
       <div class="cover" style="--hue:${hue(d.title)}"><span>${esc(s?.emoji || '📄')}</span><div class="cover-title">${esc(d.title)}</div></div>
       <div class="card-body">
         <div class="card-title" title="${esc(d.title)}">${esc(d.title)}</div>
-        <div class="card-meta">${s ? esc(s.name) + ' · ' : ''}Trang ${d.last_page || 1}/${d.page_count || '?'}</div>
+        <div class="card-meta"><span class="badge ${kindOf(d)}">${KIND_LABEL[kindOf(d)]}</span>${s ? esc(s.name) + ' · ' : ''}${kindOf(d) === 'pptx' ? 'Slide' : 'Trang'} ${d.last_page || 1}/${d.page_count || '?'}</div>
         <div class="bar"><i style="width:${pct}%"></i></div>
         ${snippet ? `<div class="snip">${esc(snippet)}</div>` : ''}
       </div>
@@ -313,14 +318,17 @@ async function docMenu(d) {
 async function uploadFiles(files) {
   const section_id = S.sections.some((s) => s.id === S.filter) ? S.filter : null;
   for (const f of files) {
+    const ext = extOf(f.name);
+    if (ext === 'doc' || ext === 'ppt') { toast(`“${f.name}” là định dạng cũ — mở bằng Word/PowerPoint rồi Lưu thành .${ext}x nhé.`, 5000); continue; }
+    if (!KINDS.includes(ext)) { toast(`“${f.name}” chưa hỗ trợ (chỉ nhận PDF, .docx, .pptx).`, 4000); continue; }
     if (store.mode === 'cloud' && f.size > 50 * 1048576) { toast(`“${f.name}” lớn hơn 50MB, Supabase free không nhận.`, 4000); continue; }
     toast(`Đang tải lên “${f.name}”…`, 1500);
     try {
       const buf = await f.arrayBuffer();
       let page_count = null;
-      try { const p = await pdfjsLib.getDocument({ data: buf.slice(0) }).promise; page_count = p.numPages; p.destroy(); } catch {}
+      if (ext === 'pdf') try { const p = await pdfjsLib.getDocument({ data: buf.slice(0) }).promise; page_count = p.numPages; p.destroy(); } catch {}
       const up = await store.docs.uploadPdf(f);
-      const d = { id: uid(), title: f.name.replace(/\.pdf$/i, ''), section_id, page_count, last_page: 1, ...up, created_at: now(), updated_at: now() };
+      const d = { id: uid(), title: f.name.replace(/\.(pdf|docx|pptx)$/i, ''), section_id, page_count, last_page: 1, ...up, created_at: now(), updated_at: now() };
       await store.docs.upsert(d);
       S.docs.unshift(d);
       drawSidebar(); drawGrid();
@@ -348,6 +356,7 @@ async function openReader(id) {
   closeReader();
   if (!S.docs.length) await loadLibrary();
   const d = S.docs.find((x) => x.id === id);
+  const kind = d ? kindOf(d) : 'pdf';
   if (!d) { location.hash = ''; return; }
   document.title = d.title + ' · Góc Đọc';
   app.innerHTML = '';
@@ -367,14 +376,14 @@ async function openReader(id) {
       <div class="palette"></div>
       <div class="rbar-right">
         <button class="icon-btn zo" title="Thu nhỏ">−</button><span class="zv">100%</span><button class="icon-btn zi" title="Phóng to">＋</button>
-        <button class="icon-btn s-btn" title="Tìm trong PDF (Ctrl+F)">🔍</button>
+        <button class="icon-btn s-btn" title="Tìm trong tài liệu (Ctrl+F)">🔍</button>
         <button class="icon-btn l-btn" title="Danh sách highlight">🗒</button>
         <button class="icon-btn lay-btn" title="Bố cục">◫</button>
         <button class="icon-btn x-btn" title="Xuất file">⤓</button>
       </div>
     </header>
     <div class="split">
-      <section class="pane pane-pdf"><div class="pdf-host"></div><aside class="drawer hidden"></aside><div class="loading">Đang mở PDF…</div></section>
+      <section class="pane pane-pdf"><div class="pdf-host"></div><aside class="drawer hidden"></aside><div class="loading">Đang mở tài liệu…</div></section>
       <div class="divider" title="Kéo để chỉnh"><i></i></div>
       <section class="pane pane-note"></section>
     </div></div>`);
@@ -432,13 +441,13 @@ async function openReader(id) {
 
   try {
     const data = await store.docs.getPdf(d);
-    const n = await R.view.load(data, d.last_page || 1);
+    const n = await R.view.load(data, d.last_page || 1, kind);
     R.view.setAnns([...R.anns]);
     $('.pg-total', v).textContent = n;
     if (d.page_count !== n) { d.page_count = n; store.docs.upsert(d).catch(() => {}); }
   } catch (e) {
     console.error(e);
-    $('.loading', v).textContent = '⚠ Không mở được PDF: ' + e.message;
+    $('.loading', v).textContent = '⚠ Không mở được tài liệu: ' + e.message;
     return;
   }
   $('.loading', v).remove();
@@ -489,7 +498,7 @@ async function openReader(id) {
   $('.lay-btn', v).onclick = async () => {
     const r = await modal('Bố cục', `<div class="lay-opts">
       <button class="lay" data-l="split">◫<span>Chia đôi</span></button>
-      <button class="lay" data-l="pdf">▭<span>Chỉ PDF</span></button>
+      <button class="lay" data-l="pdf">▭<span>Chỉ tài liệu</span></button>
       <button class="lay" data-l="note">✎<span>Chỉ note</span></button></div>`, [{ label: 'Đóng', value: () => null }]);
     void r;
   };
@@ -566,7 +575,7 @@ async function openReader(id) {
       .filter((a) => a.type === 'ink' || !R.colorFilter || R.colorFilter.includes(a.color))
       .sort((a, b) => a.page - b.page || (a.rects?.[0]?.[1] ?? 0) - (b.rects?.[0]?.[1] ?? 0));
     const box = h('<div class="dr-list"></div>');
-    if (!list.length) box.appendChild(h('<p class="muted pad">Chưa có highlight nào. Bôi đen chữ trên PDF để bắt đầu.</p>'));
+    if (!list.length) box.appendChild(h('<p class="muted pad">Chưa có highlight nào. Bôi đen chữ trong tài liệu để bắt đầu.</p>'));
     for (const a of list) {
       const it = h(`<div class="dr-item">
         <i class="bar-c" style="background:${a.type === 'ink' ? a.color : colorHex(a.color)}"></i>
@@ -591,7 +600,7 @@ async function openReader(id) {
   };
   const drawSearch = () => {
     drawer.innerHTML = '';
-    drawer.appendChild(h(`<div class="dr-head"><b>Tìm trong PDF</b><button class="icon-btn dr-x">✕</button></div>`));
+    drawer.appendChild(h(`<div class="dr-head"><b>Tìm trong tài liệu</b><button class="icon-btn dr-x">✕</button></div>`));
     const inp = h(`<input class="input ds-in" placeholder="Gõ từ cần tìm… (không cần dấu)">`);
     const res = h('<div class="dr-list"></div>');
     drawer.append(inp, res);
@@ -620,7 +629,7 @@ async function openReader(id) {
   $('.x-btn', v).onclick = async () => {
     const r = await modal('Xuất file', `<p class="muted">Chọn loại file muốn tải về:</p>`, [
       { label: 'Huỷ', value: () => null },
-      { label: '📄 PDF có highlight', value: () => 'pdf' },
+      kind === 'pdf' ? { label: '📄 PDF có highlight', value: () => 'pdf' } : { label: `📎 File gốc (.${kind})`, value: () => 'orig' },
       { label: '📝 Note ra Word', primary: true, value: () => 'docx' },
     ]);
     if (!r) return;
@@ -631,6 +640,9 @@ async function openReader(id) {
         const { exportDocx } = await import('./export/docx.js');
         const blob = await exportDocx(d.title, R.note.page, R.anns);
         (await import('./export/pdf.js')).download(blob, `${d.title} - ghi chú.docx`);
+      } else if (r === 'orig') {
+        const { download } = await import('./export/pdf.js');
+        download(new Blob([await store.docs.getPdf(d)]), `${d.title}.${kind}`);
       } else {
         const { exportPdf, download } = await import('./export/pdf.js');
         const bytes = await store.docs.getPdf(d);

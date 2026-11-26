@@ -65,7 +65,8 @@ export const localStore = {
       for (const a of anns) await del('anns', a.id);
     },
     async uploadPdf(file) {
-      const path = `pdf/${crypto.randomUUID()}.pdf`;
+      const ext = (file.name.split('.').pop() || 'pdf').toLowerCase();
+      const path = `pdf/${crypto.randomUUID()}.${ext}`;
       await put('blobs', file, path);
       return { file_path: path, size: file.size };
     },

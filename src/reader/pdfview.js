@@ -75,9 +75,12 @@ export class PdfView {
     this.ro.disconnect();
     document.removeEventListener('selectionchange', this._sel);
     this.pdf?.destroy();
+    if (window.CSS?.highlights) CSS.highlights.delete('gd-search');
   }
 
-  async load(data, startPage = 1) {
+  async load(data, startPage = 1, kind = 'pdf') {
+    this.kind = kind;
+    if (kind !== 'pdf') return this.loadHtml(data, startPage, kind);
     this.pdf = await pdfjsLib.getDocument({
       data,
       cMapUrl: '/pdfjs/cmaps/',
@@ -126,7 +129,62 @@ export class PdfView {
     return n;
   }
 
-  get numPages() { return this.pdf?.numPages || 0; }
+  get isHtml() { return !!this.kind && this.kind !== 'pdf'; }
+  get numPages() { return this.isHtml ? this.pages.length : this.pdf?.numPages || 0; }
+
+  // Word / PowerPoint: dựng thành HTML, mỗi trang (section) hoặc slide là một "page"
+  async loadHtml(data, startPage, kind) {
+    const stage = el('div', 'html-stage');
+    document.body.appendChild(stage);
+    let nodes = [];
+    try {
+      if (kind === 'docx') {
+        const { renderAsync } = await import('docx-preview');
+        this.styleBox = el('div', 'docx-styles');
+        this.root.appendChild(this.styleBox);
+        await renderAsync(data, stage, this.styleBox, {
+          className: 'docx', inWrapper: true, breakPages: true, ignoreLastRenderedPageBreak: false,
+          ignoreWidth: false, ignoreHeight: false, experimental: true, useBase64URL: true, renderComments: false,
+        });
+        nodes = [...stage.querySelectorAll('.docx-wrapper > section')];
+      } else if (kind === 'pptx') {
+        const { init } = await import('pptx-preview');
+        const box = el('div');
+        stage.appendChild(box);
+        const pv = init(box, { width: 960, height: 540, mode: 'list' });
+        await pv.preview(data);
+        nodes = [...box.querySelectorAll('.pptx-preview-slide-wrapper')];
+      } else throw new Error('Định dạng này chưa hỗ trợ');
+      if (!nodes.length) throw new Error('File trống hoặc không đọc được');
+      const sizes = nodes.map((n) => ({ w: n.offsetWidth || 816, h: n.offsetHeight || 1056 }));
+      nodes.forEach((node, idx) => {
+        const i = idx + 1;
+        const p = { num: i, base: sizes[idx], rendered: true, node };
+        node.style.margin = '0';
+        p.el = el('div', 'page html-page');
+        p.el.dataset.page = i;
+        p.box = el('div', 'html-scale' + (kind === 'docx' ? ' docx-wrapper' : ''));
+        p.box.style.width = p.base.w + 'px';
+        p.box.appendChild(node);
+        p.hl = el('div', 'hl-layer');
+        p.ink = document.createElementNS(SVGNS, 'svg');
+        p.ink.classList.add('ink-layer');
+        p.draw = el('div', 'draw-layer');
+        const num = el('div', 'page-num');
+        num.textContent = i;
+        p.el.append(p.box, p.hl, p.ink, p.draw, num);
+        this.wrap.appendChild(p.el);
+        this.pages.push(p);
+        this.bindDraw(p);
+      });
+    } finally {
+      stage.remove();
+    }
+    this.relayout();
+    this.applyTool();
+    requestAnimationFrame(() => this.goTo(startPage, null, false));
+    return this.pages.length;
+  }
 
   scaleFor(p) {
     const avail = Math.max(200, this.scroller.clientWidth - 24);
@@ -141,6 +199,11 @@ export class PdfView {
     p.el.style.width = p.W + 'px';
     p.el.style.height = p.H + 'px';
     p.el.style.setProperty('--scale-factor', s);
+    if (this.isHtml) {
+      p.box.style.transform = `scale(${s})`;
+      this.drawHighlights(p); this.drawInk(p);
+      return;
+    }
     if (p.rendered) { this.unrender(p); this.renderPage(p); }
     else { this.drawHighlights(p); this.drawInk(p); }
   }
@@ -159,7 +222,7 @@ export class PdfView {
   }
 
   async renderPage(p) {
-    if (this.dead || !p || p.rendered || p.rendering) return;
+    if (this.dead || this.isHtml || !p || p.rendered || p.rendering) return;
     p.rendering = true;
     try {
       const page = await this.pdf.getPage(p.num);
@@ -525,14 +588,31 @@ export class PdfView {
     }
   }
 
-  async snip(p, [x, y, w, h]) {
-    const page = await this.pdf.getPage(p.num);
+  async pageCanvas(p) {
     const scale = Math.max(2, 1400 / p.base.w);
+    if (this.isHtml) {
+      const { default: html2canvas } = await import('html2canvas');
+      const holder = el('div', 'html-stage snap');
+      const box = el('div', p.box.className);
+      box.style.width = p.base.w + 'px';
+      box.appendChild(p.node.cloneNode(true));
+      holder.appendChild(box);
+      document.body.appendChild(holder);
+      try {
+        return await html2canvas(box.firstChild, { scale, backgroundColor: '#ffffff', useCORS: true, logging: false });
+      } finally { holder.remove(); }
+    }
+    const page = await this.pdf.getPage(p.num);
     const vp = page.getViewport({ scale });
     const c = document.createElement('canvas');
     c.width = Math.floor(vp.width); c.height = Math.floor(vp.height);
+    await page.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
+    return c;
+  }
+
+  async snip(p, [x, y, w, h]) {
+    const c = await this.pageCanvas(p);
     const ctx = c.getContext('2d');
-    await page.render({ canvasContext: ctx, viewport: vp }).promise;
     // vẽ thêm highlight + nét bút vào ảnh chụp
     for (const a of this.anns) {
       if (a.page !== p.num) continue;
@@ -559,6 +639,11 @@ export class PdfView {
   // ---------- Search ----------
   async pageText(num) {
     if (this.textCache.has(num)) return this.textCache.get(num);
+    if (this.isHtml) {
+      const t = (this.pages[num - 1]?.node.innerText || '').replace(/\s+/g, ' ');
+      this.textCache.set(num, t);
+      return t;
+    }
     const page = await this.pdf.getPage(num);
     const tc = await page.getTextContent();
     const s = tc.items.map((i) => i.str + (i.hasEOL ? ' ' : '')).join('').replace(/\s+/g, ' ');
@@ -568,7 +653,8 @@ export class PdfView {
 
   async search(q, onProgress) {
     this.searchQuery = q.trim();
-    for (const p of this.pages) this.markSearch(p);
+    if (this.isHtml) this.markHtmlSearch();
+    else for (const p of this.pages) this.markSearch(p);
     if (!this.searchQuery) return [];
     const nq = norm(this.searchQuery).out;
     const results = [];
@@ -587,8 +673,33 @@ export class PdfView {
     return results;
   }
 
+  // Tô kết quả tìm kiếm trong Word/PowerPoint (CSS Highlight API)
+  markHtmlSearch() {
+    if (!window.CSS?.highlights || typeof Highlight === 'undefined') return;
+    CSS.highlights.delete('gd-search');
+    const nq = this.searchQuery ? norm(this.searchQuery).out : '';
+    if (!nq) return;
+    const ranges = [];
+    for (const p of this.pages) {
+      const walker = document.createTreeWalker(p.node, NodeFilter.SHOW_TEXT);
+      let n;
+      while ((n = walker.nextNode()) && ranges.length < 500) {
+        const { out, map } = norm(n.data);
+        let i = out.indexOf(nq);
+        while (i >= 0) {
+          const r = new Range();
+          r.setStart(n, map[i]);
+          r.setEnd(n, map[i + nq.length - 1] + 1);
+          ranges.push(r);
+          i = out.indexOf(nq, i + nq.length);
+        }
+      }
+    }
+    CSS.highlights.set('gd-search', new Highlight(...ranges));
+  }
+
   markSearch(p) {
-    if (!p.rendered) return;
+    if (this.isHtml || !p.rendered) return;
     const nq = this.searchQuery ? norm(this.searchQuery).out : '';
     p.text.querySelectorAll('span').forEach((s) => {
       s.classList.toggle('search-hit', !!nq && s.childElementCount === 0 && norm(s.textContent).out.includes(nq));
